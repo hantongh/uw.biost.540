@@ -1,0 +1,136 @@
+---
+title: "BIOST540 Midterm Project Coding Appendix"
+author: "Ivy Zhang, Hantong Hu"
+date: "5/1/2021"
+output: pdf_document
+---
+
+```{r graphic,eval = F, fig.height=5}
+library(uwIntroStats)
+library(nlme)
+library(dplyr)
+library(reshape2)
+library(ggplot2)
+library(joineR)
+library(MASS)
+library(lattice)
+#Read Data
+cd4 <- read.csv("~/Desktop/R hw/cd4.csv")
+cd4 = cd4[,-1]
+cd4$treatment_group = as.factor(cd4$group)
+
+#Data Organizing
+unique_logcd4 = unique(cd4[,c("id","sex","age","group")])
+byid = cd4 %>% group_by(id) %>% filter(week == 0)
+byid = byid[,c(1,6)]
+summary = by(unique_logcd4[,c(2,3)], INDICES = unique_logcd4$group, FUN = descrip)
+visit_counts <- cd4 %>% group_by(id) %>% summarise(n=n(), nobs=sum(!is.na(logcd4)))
+table(visit_counts$nobs)
+n_visit = cd4%>% group_by(id) %>% summarize(n())
+
+
+cd4_demo = cd4 %>% group_by(id) %>% do(head(.,1))
+cd4_demo = merge(cd4_demo, n_visit, all.x = T, by ="id")
+cd4_demo = cd4_demo[,-6]
+cd4_demo = merge(cd4_demo, byid, all.x = T, by= "id")
+cd4_demo$missing = NA
+cd4_demo$missing[cd4_demo$`n()`<6] = "Missing"
+cd4_demo$missing[cd4_demo$`n()`>=6] = "Complete"
+cd4_demo$sex <- factor(cd4_demo$sex, levels = c(1,0), 
+                         labels = c("Male", "Female"))
+label(cd4_demo$age) <- "Age (year)"
+label(cd4_demo$sex) <- "Sex"
+label(cd4_demo$logcd4) <- "Baseline Log(CD4 count+1)"
+label(cd4_demo$`n()`) <- "Number of Visits"
+label(cd4_demo$treatment_group) = "Treatment Group"
+cd4_demo$treatment_group = factor(cd4_demo$group, levels = c(1,2,3,4),
+                                  labels = c("AZT alternating ddl",
+                                             "AZT+ddC","AZT+ddl","AZT/ddl+nevirapine"))
+label(cd4_demo$treatment_group) = "Treatment Group"
+
+#Figure 1
+ggplot(cd4, aes(x=week, y=logcd4, group=id, color=as.factor(group))) +
+  geom_line(aes(color=as.factor(group)), alpha=0.1) +
+  geom_smooth(method = 'loess', aes(group=NULL,color=as.factor(group)), size=2)+
+  scale_color_manual(values=c("light green", "gold", "blue","red"),
+                                         labels = c("AZT alternating ddl",
+                                                    "AZT+ddC","AZT+ddl","AZT/ddl+nevirapine"),
+                                         name = "Treatment")+
+  labs(title = "Loess Smooth line of log(CD4 count+1) over time for four treatment groups")
+
+
+
+#Table 1
+table1(~ age + sex + logcd4 + `n()`| group, data=cd4_demo,
+       render.continuous=c(.="Mean (SD)"))
+
+#Table 2
+table1(~ age + sex + logcd4 + `n()` + treatment_group| missing, data=cd4_demo,
+       render.continuous=c(.="Mean (SD)"))
+
+
+
+### Models
+# Random intercept + slope + spline at week 16
+cd4$weekSpline16 <- (cd4$week-16)*(cd4$week>16)
+cd4$group <- factor(cd4$group, levels = c(1,2,3,4), 
+                         labels = c("I","II", "III", "IV"))
+
+mod <- lme(fixed=logcd4 ~ (week + weekSpline16)*group, 
+            method="ML", data=cd4, na.action=na.omit,
+            random=reStruct(~1 + week + weekSpline16 | id,REML=F))
+summary(mod)
+intervals(mod)
+
+sum.dat <- as.data.frame(coef(summary(mod)))
+
+mod_reduced <- lme(fixed=logcd4 ~ week + weekSpline16+group, method="ML",
+                    random=reStruct(~1 + week + weekSpline16 | id, REML=F), data=cd4,
+                    na.action=na.omit)
+anova(mod, mod_reduced)
+
+mod_1_16 <- glht(mod, linfct=c("weekSpline16 = 0"))
+confint(mod_1_16)
+summary(mod_1_16)
+
+mod_2_16 <- glht(mod, linfct=c("weekSpline16 + week:groupII + weekSpline16:groupII = 0"))
+summary(mod_2_16)
+confint(mod_2_16)
+
+mod_3_16 <- glht(mod, linfct=c("weekSpline16 + week:groupIII + weekSpline16:groupIII = 0"))
+summary(mod_3_16)
+confint(mod_3_16)
+
+mod_4_16 <- glht(mod, linfct=c("weekSpline16 + week:groupIV + weekSpline16:groupIV = 0"))
+summary(mod_4_16)
+confint(mod_4_16)
+
+# Control for age and gender
+cd4$sex <- factor(cd4$sex, levels = c(1,0), 
+                    labels = c("Male","Female"))
+
+mod_c <- lme(fixed=logcd4 ~ (week + weekSpline16)*group + sex+age, 
+           method="ML", data=cd4, na.action=na.omit,
+           random=reStruct(~1 + week + weekSpline16 | id,REML=F))
+summary(mod_c)
+intervals(mod_c)
+
+sum.c.dat <- as.data.frame(coef(summary(mod_c)))
+
+mod_c_reduced <- lme(fixed=logcd4 ~ week + weekSpline16+group+ sex+age, method="ML",
+                   random=reStruct(~1 + week + weekSpline16 | id, REML=F), data=cd4,
+                   na.action=na.omit)
+anova(mod_c, mod_c_reduced)
+
+mod_2_16 <- glht(mod_c, linfct=c("weekSpline16 + week:groupII + weekSpline16:groupII = 0"))
+summary(mod_2_16)
+confint(mod_2_16)
+
+mod_3_16 <- glht(mod_c, linfct=c("weekSpline16 + week:groupIII + weekSpline16:groupIII = 0"))
+summary(mod_3_16)
+confint(mod_3_16)
+
+mod_4_16 <- glht(mod_c, linfct=c("weekSpline16 + week:groupIV + weekSpline16:groupIV = 0"))
+summary(mod_4_16)
+confint(mod_4_16)
+```
