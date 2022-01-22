@@ -1,0 +1,328 @@
+---
+title: "BIOST 544 Project"
+author: ""
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+knitr::opts_chunk$set(echo = F)
+setwd("C:/Users/second/Desktop/BIOST 544/Project")
+```
+
+## Data preparation
+
+```{r data prep, warning=FALSE, message=FALSE, echo =FALSE, eval=F}
+## Data prep
+# Load Data & select interest variables
+load("NSDUH_2016.RData")
+load("NSDUH_2017.RData")
+load("NSDUH_2018.RData")
+load("NSDUH_2019.RData")
+
+preg2016 <- PUF2016_022818 %>% filter(pregnant == 1)
+preg2016 <- preg2016 %>% select(spdmon,NEWRACE2,CATAG3,irmarit,HEALTH2,eduhighcat,WRKSTATWK2,income,illmon)
+preg2016 <- na.omit(preg2016)
+
+preg2017 <- PUF2017_100918 %>% filter(pregnant == 1)
+preg2017 <- preg2017 %>% select(spdmon,NEWRACE2,CATAG3,irmarit,HEALTH2,eduhighcat,WRKSTATWK2,income,illmon)
+preg2017 <- na.omit(preg2017)
+
+preg2018 <- PUF2018_100819 %>% filter(pregnant == 1)
+preg2018 <- preg2018 %>% select(spdmon,NEWRACE2,CATAG3,irmarit,HEALTH2,eduhighcat,WRKSTATWK2,income,illmon)
+preg2018 <- na.omit(preg2018)
+
+preg2019 <- PUF2019_100920 %>% filter(pregnant == 1)
+preg2019 <- preg2019 %>% select(spdmon,NEWRACE2,CATAG3,irmarit,HEALTH2,eduhighcat,WRKSTATWK2,income,illmon)
+preg2019 <- na.omit(preg2019)
+
+# Combine data
+preg2016 <- read.csv("./Data/preg2016.csv")
+preg2017 <- read.csv("./Data/preg2017.csv")
+preg2018 <- read.csv("./Data/preg2018.csv")
+preg2019 <- read.csv("./Data/preg2019.csv")
+
+preg.dat <- rbind(preg2016, preg2017, preg2018, preg2019)
+```
+
+```{r variable imputation, warning=FALSE, message=FALSE, echo =FALSE, eval=F}
+## Imputation of interest variable
+preg.dat <- preg.dat %>% 
+  mutate(
+    jobstat = case_when(
+      WRKSTATWK2 <= 3 ~ 1,
+      WRKSTATWK2 == 98 ~ 5,
+      WRKSTATWK2 == 5 ~ 3,
+      WRKSTATWK2 == 7 ~ 4,
+      TRUE ~ 2
+    )
+  )
+preg.dat$WRKSTATWK2 <- NULL
+preg.dat$income01 <- ifelse(preg.dat$income == 2 | preg.dat$income == 1, 0,1 )
+preg.dat$employ01 <- ifelse(preg.dat$jobstat == 5, NA, preg.dat$jobstat)
+preg.dat <- na.omit(preg.dat)
+preg.dat$employ01 <- ifelse(preg.dat$jobstat ==1, 1, 0)
+preg.dat$income <- NULL
+preg.dat$jobstat <- NULL
+
+# Save data for further use
+write.csv(preg.dat, file = "preg_all.csv")
+```
+
+
+## Table 1
+
+```{r table 1, warning=FALSE, message=FALSE, echo =F, results='hide'}
+## Descriptive Statistics
+preg_all <- read.csv("preg_all.csv")[,-1]
+library(table1)
+preg.dat.table <- preg_all
+
+preg.dat.table$spdmon <- factor(preg.dat.table$spdmon, levels = c(0,1), 
+                                  labels = c("K6<13","K6>=13"))
+label(preg.dat.table$spdmon) <- "Past Month K6"
+
+preg.dat.table$NEWRACE2 <- factor(preg.dat.table$NEWRACE2, levels = c(1:7), 
+                                  labels = c("White","Afr Am", "Native Am","Native Hawaiian/Pacific Isl","Asian","1+ Race","Hispanic"))
+label(preg.dat.table$NEWRACE2) <- "Race"
+
+preg.dat.table$CATAG3 <- factor(preg.dat.table$CATAG3, levels = c(2,3,4), 
+                                labels = c("18-25","26-34","35-49"))
+label(preg.dat.table$CATAG3) <- "Age Category"
+
+preg.dat.table$irmarit <- factor(preg.dat.table$irmarit, levels = c(1:4), 
+                                labels = c("Married","Widowed","Divorced/Separated","Never married"))
+label(preg.dat.table$irmarit) <- "Marital Status"
+
+preg.dat.table$HEALTH2 <- factor(preg.dat.table$HEALTH2, levels = c(1:4), 
+                                labels = c("Excellent","Very good","Good","Fair/Poor"))
+label(preg.dat.table$HEALTH2) <- "Overall Health"
+
+preg.dat.table$eduhighcat <- factor(preg.dat.table$eduhighcat, levels = c(1:4), 
+                                 labels = c("< High school","High school grad","Some college/assoc","College grad"))
+label(preg.dat.table$eduhighcat) <- "Education Categories"
+
+preg.dat.table$employ01 <- factor(preg.dat.table$employ01, levels = c(0,1), 
+                                 labels = c("Unemployed","Employed"))
+label(preg.dat.table$employ01) <- "Past Week Working Status"
+
+preg.dat.table$income01 <- factor(preg.dat.table$income01, levels = c(0,1), 
+                                    labels = c("< $50,000",">= $50,000"))
+label(preg.dat.table$income01) <- "Total Family Income"
+
+preg.dat.table$illmon <- factor(preg.dat.table$illmon, levels = c(0,1), 
+                                labels = c("No","Yes"))
+label(preg.dat.table$illmon) <- "Past Month Illicit Drug Use"
+
+table1(~income01+employ01+HEALTH2+eduhighcat+NEWRACE2+CATAG3+irmarit+illmon|spdmon, data = preg.dat.table)
+```
+
+## Permutation test
+
+```{r permutation, warning=FALSE, message=FALSE, echo =F, results='hide'}
+prop.diff.income = mean(preg_all$spdmon[preg_all$income01 == 1]) - mean(preg_all$spdmon[preg_all$income01 == 0])
+prop.diff.employ = mean(preg_all$spdmon[preg_all$employ01 == 1]) - mean(preg_all$spdmon[preg_all$employ01 == 0])
+
+do.one <- function(outcome, label){
+  perm.label <- sample(label)
+  return(mean(outcome[perm.label == 1]) - mean(outcome[perm.label == 0]))
+}
+
+set.seed(1)
+sampling.dist.income = with(preg_all, replicate(1e4,do.one(preg_all$spdmon,preg_all$income01)))
+sampling.dist.employ = with(preg_all, replicate(1e4,do.one(preg_all$spdmon,preg_all$employ01)))
+
+ggplot(data.frame(perm.prop.diff = sampling.dist.income), aes(x = perm.prop.diff, y=..density..)) +
+  geom_density() +
+  geom_vline(xintercept = prop.diff.income, color = "red")
+
+ggplot(data.frame(perm.prop.diff = sampling.dist.employ), aes(x = perm.prop.diff, y=..density..)) +
+  geom_density() +
+  geom_vline(xintercept = prop.diff.employ, color = "red")
+
+# Permutation p-value
+mean(abs(sampling.dist.income)>abs(prop.diff.income))
+mean(abs(sampling.dist.employ)>abs(prop.diff.employ))
+```
+
+## Propensity score
+```{r permutation, warning=FALSE, message=FALSE, echo =F, results='hide'}
+propen.model.income.bina = glm(income01~illmon+eduhighcat+HEALTH2+CATAG3+irmarit+NEWRACE2, data = preg_all,
+                               family = binomial)
+propen.model.employ.bina = glm(employ01~illmon+eduhighcat+HEALTH2+CATAG3+irmarit+NEWRACE2, data = preg_all,
+                               family = binomial)
+
+propensities.income.bina = predict(propen.model.income.bina, data = preg_all, type = "response")
+propensities.employ.bina = predict(propen.model.employ.bina, data = preg_all, type = "response")
+
+ggplot(data.frame(propensities=propensities.income.bina, income = as.factor(preg_all$income01)),
+       aes(x = propensities, y = ..density.., color = income)) + geom_density()
+ggplot(data.frame(propensities=propensities.employ.bina, employ = as.factor(preg_all$employ01)),
+       aes(x = propensities, y = ..density.., color = employ)) + geom_density()
+
+trunc.propen.income.bina = propensities.income.bina %>% pmin(0.95) %>% pmax(0.05)
+trunc.propen.employ.bina = propensities.employ.bina %>% pmin(0.95) %>% pmax(0.05)
+```
+
+## IPW
+```{r ipw, warning=FALSE, message=FALSE, echo =F, results='hide'}
+npat = nrow(preg_all)
+
+weights.income.bin = rep(0, npat)
+weights.employ.bin = rep(0, npat)
+
+representative.propen.income = sum(preg_all$income01)/npat
+representative.propen.employ = sum(preg_all$employ01)/npat
+actual.propen.income.bina = trunc.propen.income.bina
+actual.propen.employ.bina = trunc.propen.employ.bina
+
+income.ind = which(preg_all$income01 == 1)
+employ.ind = which(preg_all$employ01 == 1)
+
+weights.income.bin[income.ind] = representative.propen.income/actual.propen.income.bina[income.ind]
+weights.income.bin[-income.ind] = (1-representative.propen.income)/(1-actual.propen.income.bina[-income.ind])
+weights.employ.bin[employ.ind] = representative.propen.employ/actual.propen.employ.bina[employ.ind]
+weights.employ.bin[-employ.ind] = (1-representative.propen.employ)/(1-actual.propen.employ.bina[-employ.ind])
+
+ggplot(data.frame(weights = weights.employ.bin), aes(x=weights.income.bin, y =..density..)) + 
+  geom_histogram()
+ggplot(data.frame(weights = weights.employ.bin), aes(x=weights.employ.bin, y =..density..)) + 
+  geom_histogram()
+
+income.prop.est = with(preg_all, mean((weights.income.bin*spdmon)[income.ind]))
+noincome.prop.est = with(preg_all,mean((weights.income.bin*spdmon)[-income.ind]))
+diff.income.est = income.prop.est - noincome.prop.est
+
+employ.prop.est = with(preg_all,mean((weights.employ.bin*spdmon)[employ.ind]))
+noemploy.prop.est = with(preg_all,mean((weights.employ.bin*spdmon)[-employ.ind]))
+diff.employ.est = employ.prop.est - noemploy.prop.est
+```
+
+
+```{r re-rand, warning=FALSE, message=FALSE, echo =F, fig.height=3, fig.width=3}
+do.one.propen.binary <- function(outcome, propen){
+  n <- length(outcome)
+  label <- rbinom(n,1,propen)
+
+  weights <- rep(0,n)
+  representative <- mean(label)
+  actual <- propen
+  ind.t <- which(label == 1)
+  weights[ind.t] <- (representative/actual)[ind.t]
+  weights[-ind.t] <- ((1-representative)/(1-actual))[-ind.t]
+
+  return(mean((weights*outcome)[ind.t]) - mean((weights*outcome)[-ind.t]))
+}
+
+set.seed(1)
+rerandomized.diffs.income = replicate(1e3, do.one.propen.binary(preg_all$spdmon, trunc.propen.income.bina))
+rerandomized.diffs.employ = replicate(1e3, do.one.propen.binary(preg_all$spdmon, trunc.propen.employ.bina))
+
+ggplot(data.frame(diffs = rerandomized.diffs.income), aes(x = diffs, y = ..density..)) +
+  geom_density() +
+  geom_vline(xintercept = diff.income.est, color = "red")
+ggplot(data.frame(diffs = rerandomized.diffs.employ), aes(x = diffs, y = ..density..)) +
+  geom_density() +
+  geom_vline(xintercept = diff.employ.est, color = "red")
+
+mean(abs(rerandomized.diffs.income)>abs(diff.income.est))
+mean(abs(rerandomized.diffs.employ)>abs(diff.employ.est))
+```
+
+## Bootstrap
+
+```{r bootstrap, warning=FALSE, message=FALSE, echo =F, fig.height=3, fig.width=3}
+calc_weighted_outcome <- function(outcome, label, props){
+  weights <- rep(0, length(outcome))
+  
+  representative.propen <- mean(label)
+  actual.propen <- props
+
+  treat.ind <- which(label == 1)
+  weights[treat.ind] <- representative.propen/actual.propen[treat.ind]
+  weights[-treat.ind]<- (1 - representative.propen)/(1- actual.propen[-treat.ind])
+  
+  weighted.outcome <- weights*outcome
+  
+  return(weighted.outcome)
+}
+
+calc_stat_weighted <- function(weighted.outcome, label){
+  return(mean(weighted.outcome[label == 1]) - mean(weighted.outcome[label == 0]))
+}
+
+do_one_income <- function(dat){
+  resample.inds <- sample(1:nrow(dat), replace=TRUE)
+  resample.dat <- dat[resample.inds,]
+  
+  propen.model <- glm(income01~illmon+eduhighcat+HEALTH2+CATAG3+irmarit+NEWRACE2, data = resample.dat,
+                               family = binomial)
+  propensities <- predict(propen.model, data = resample.dat, type = "response")
+  trunc.prop <- propensities %>% pmax(0.05) %>% pmin(0.95)
+  
+  weighted.outcome.resamp <- calc_weighted_outcome(resample.dat$spdmon,
+                                                   resample.dat$income01,
+                                                   trunc.prop)
+  mean.diff <- calc_stat_weighted(weighted.outcome.resamp, resample.dat$income01)
+  return(mean.diff)
+}
+
+do_one_employ <- function(dat){
+  resample.inds <- sample(1:nrow(dat), replace=TRUE)
+  resample.dat <- dat[resample.inds,]
+  
+  propen.model <- glm(employ01~illmon+eduhighcat+HEALTH2+CATAG3+irmarit+NEWRACE2, data = resample.dat,
+                               family = binomial)
+  propensities <- predict(propen.model, data = resample.dat, type = "response")
+  trunc.prop <- propensities %>% pmax(0.05) %>% pmin(0.95)
+  
+  weighted.outcome.resamp <- calc_weighted_outcome(resample.dat$spdmon,
+                                                   resample.dat$employ01,
+                                                   trunc.prop)
+  mean.diff <- calc_stat_weighted(weighted.outcome.resamp, resample.dat$employ01)
+  return(mean.diff)
+}
+
+
+mean.diff.est.income <- calc_stat_weighted(calc_weighted_outcome(preg_all$spdmon, preg_all$income01, trunc.propen.income.bina),
+                                           preg_all$income01)
+mean.diff.est.employ <- calc_stat_weighted(calc_weighted_outcome(preg_all$spdmon, preg_all$employ01, trunc.propen.employ.bina),
+                                           preg_all$employ01)
+
+set.seed(1)
+boot.dist.income <- replicate(1e3, do_one_income(preg_all))
+boot.dist.employ <- replicate(1e3, do_one_employ(preg_all))
+
+ggplot(data.frame(mean.diff = boot.dist.income), aes(x = mean.diff, y=..density..)) + geom_histogram() + 
+  geom_vline(xintercept=mean.diff.est.income, color="red")
+ggplot(data.frame(mean.diff = boot.dist.employ), aes(x = mean.diff, y=..density..)) + geom_histogram() + 
+  geom_vline(xintercept=mean.diff.est.employ, color="red")
+
+
+distance.U.L.income <- quantile(boot.dist.income, c(0.05,0.95)) - mean.diff.est.income
+distance.U.L.employ <- quantile(boot.dist.employ, c(0.05,0.95)) - mean.diff.est.employ
+
+(CI.income <- mean.diff.est.income - distance.U.L.income[2:1])
+(CI.employ <- mean.diff.est.employ - distance.U.L.employ[2:1])
+
+```
+
+## Normal GLM
+
+```{r glm, warning=FALSE, message=FALSE, echo =F}
+log.model <- glm(spdmon~income01+employ01+HEALTH2+eduhighcat+NEWRACE2+CATAG3+irmarit+illmon, data = preg_all, family = binomial)
+summary(log.model)
+
+library("sandwich")
+coef <- log.model$coef
+rob_se <- sqrt(diag(vcovHC(log.model, type = "HC0")))
+(ci_income <- coef[2] + c(0, qnorm(c(0.025, 0.975))) * rob_se[2])
+(ci_employ <- coef[3] + c(0, qnorm(c(0.025, 0.975))) * rob_se[3])
+```
+
+\pagebreak
+
+# Code
+```{r ref.label=knitr::all_labels(), echo=TRUE, eval=FALSE}
+```
